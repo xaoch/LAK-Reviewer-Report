@@ -1,0 +1,48 @@
+---
+title: "Individual Species"
+author: 'Dolf Andringa'
+date: "February 7, 2016"
+output: pdf_document
+---
+```{r echo=FALSE, eval=TRUE, include=FALSE}
+library(knitr)
+cReview<-reviews[reviews$`#`==currentReview,]
+subm<-submissions[submissions$"#"==cReview$'submission #',]
+other_reviews<-reviews[reviews$'submission #'==cReview$'submission #',]
+metr<-metareviews[metareviews$'submission #'==cReview$'submission #',]
+comm<-comments[comments$'submission #'==cReview$'submission #',]
+only_other_reviews<-other_reviews[other_reviews$'member #'!=cReview$'member #',]
+```
+
+
+```{r eval='TRUE', echo=FALSE, results='asis'}
+cat('\n## Paper Title:\n\n',subm$title[1],'\n')
+cat('\n#### Final Decision:\n',subm$decision,'\n')
+cat('\n### Your Review','\n')
+
+cat('\n#### Scores:\n')
+for (score in unlist(strsplit(cReview$scores,"\r"))) {
+    cat("\n *",score)
+}
+cat("\n")
+cat('\n####Comment for Authors:\n',gsub('\\\\',"",cReview$CommentText),'\n')
+
+order=1
+for(orev in only_other_reviews$'#') {
+    orevdata<-only_other_reviews[only_other_reviews$'#'==orev,]
+    cat('\n### Reviewer',order,'\n')
+    cat('\n#### Scores:\n')
+    for (score in unlist(strsplit(orevdata$scores,"\r"))) {
+        cat("\n *",score)
+    }
+    cat("\n")
+    cat('\n#### Comment for Authors:\n\n',gsub('\\\\',"",orevdata$CommentText),'\n')
+    order=order+1
+}
+
+cat('\n### Metareview','\n')
+cat('\n#### Recommendation:\n',metr$recommendation,'\n')
+cat('\n#### Comment for Authors:\n',gsub('\\\\',"",metr$text),'\n')
+
+cat('\n\\pagebreak\n')
+```

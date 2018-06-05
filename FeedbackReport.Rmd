@@ -1,0 +1,545 @@
+---
+title: "Review Feedback LAK-2018"
+output: 
+    pdf_document: 
+        fig_caption: yes
+params:
+  reviewerId: 1
+  reviewerName: "You"
+  reviewerFirstName: "You"
+author: '`r paste("For", reviewerName)`'
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo=FALSE)
+```
+
+
+# Introduction
+
+```{r data, echo=FALSE,warning=FALSE,results='hide',message=FALSE}
+library(knitr)
+library(readr)
+library(lubridate)
+library(pander)
+panderOptions('round', 2)
+panderOptions('keep.trailing.zeros', TRUE)
+
+committee <- read_csv("EasychairData/committee.csv",
+             locale = locale(encoding = "UTF8"))
+reviewer<-committee[committee$"person #"==params$reviewerId,]
+
+reviews <- read_csv("EasychairData/review.csv", 
+           col_types = cols(date = col_character(), 
+           time = col_character()))
+
+submissions <- read_csv("EasychairData/submission.csv", 
+            locale = locale(encoding = "UTF-8"))
+
+review_text <- read_csv("EasychairData/review_text.csv", 
+             locale = locale(encoding = "UTF-8"))
+
+metareviews <- read_csv("EasychairData/metareview.csv", 
+             locale = locale(encoding = "UTF-8"))
+
+comments <- read_csv("EasychairData/comment.csv", 
+             locale = locale(encoding = "UTF-8"))
+
+
+old_data <- read_csv("2017data.csv")
+
+```
+
+```{r old_metrics}
+reviewerMail<-last(committee[committee$`person #`==params$reviewerId,]$email)
+old_metrics<-old_data[old_data$email==reviewerMail,]
+```
+
+```{r publicationAverage}
+realReviewersFull<-committee[committee$`track #`==1 & (committee$`role`=="PC member" | committee$`role`=="senior PC member"),]
+numberReviewsFull <- sapply(realReviewersFull$`#`, function(v) nrow(reviews[reviews$`member #`==v,]))
+
+realReviewersShort<-committee[committee$`track #`==2 & (committee$`role`=="PC member" | committee$`role`=="senior PC member"),]
+numberReviewsShort <- sapply(realReviewersShort$`#`, function(v) nrow(reviews[reviews$`member #`==v,]))
+
+realReviewersAbstract<-committee[committee$`track #`==3 & (committee$`role`=="PC member" | committee$`role`=="senior PC member"),]
+numberReviewsAbstract <- sapply(realReviewersAbstract$`#`, function(v) nrow(reviews[reviews$`member #`==v,]))
+
+realReviewers<-rbind(realReviewersFull,realReviewersShort,realReviewersAbstract)
+realReviewers<-aggregate(realReviewers, list(realReviewers$`person #`),last)
+
+
+realReviewersFull$nofReviews<-numberReviewsFull
+realReviewersShort$nofReviews<-numberReviewsShort
+realReviewersAbstract$nofReviews<-numberReviewsAbstract
+
+calculateNumber<-rbind(realReviewersFull,realReviewersShort,realReviewersAbstract)
+calculateNumber<-aggregate(calculateNumber$nofReviews, list(calculateNumber$`person #`),sum)
+realReviewers$nofReviews<-calculateNumber$x
+
+realReviewers$fullname<-paste(realReviewers$'first name',realReviewers$'last name')
+realReviewers$nofMetaReviews<-sapply(realReviewers$`fullname`, function(v) nrow(metareviews[metareviews$`member name`==v,]))
+realReviewers$nofComments<-sapply(realReviewers$`fullname`, function(v) nrow(metareviews[comments$`member name`==v,]))
+metareviewer<-realReviewers[realReviewers$`person #`==params$reviewerId,]$nofMetaReviews>0
+
+reviewerFullnumber<-realReviewersFull[realReviewersFull$'person #'==params$reviewerId,]$`#`
+reviewerShortnumber<-realReviewersShort[realReviewersShort$'person #'==params$reviewerId,]$`#`
+reviewerAbstractnumber<-realReviewersAbstract[realReviewersAbstract$'person #'==params$reviewerId,]$`#`
+
+
+
+
+datesReviewsFull <- reviews[reviews$`member #` %in% realReviewersFull$`#`,c("member #", "date","time")]
+datesReviewsFull$DateTime<-mdy_hm(paste(datesReviewsFull$date,datesReviewsFull$time))
+
+datesReviewsShort <- reviews[reviews$`member #` %in% realReviewersShort$`#`,c("member #", "date","time")]
+datesReviewsShort$DateTime<-mdy_hm(paste(datesReviewsShort$date,datesReviewsShort$time))
+
+datesReviewsAbstract <- reviews[reviews$`member #` %in% realReviewersAbstract$`#`,c("member #", "date","time")]
+datesReviewsAbstract$DateTime<-mdy_hm(paste(datesReviewsAbstract$date,datesReviewsAbstract$time))
+
+
+deadline<-ymd_hm("2017-10-31 12:00")
+datesReviewsFull$Minutes<-sapply(datesReviewsFull$DateTime, function(d) (d-deadline)/ddays(1))
+datesReviewsShort$Minutes<-sapply(datesReviewsShort$DateTime, function(d) (d-deadline)/ddays(1))
+datesReviewsAbstract$Minutes<-sapply(datesReviewsAbstract$DateTime, function(d) (d-deadline)/ddays(1))
+
+
+```
+```{r}
+reviews$Length<-sapply(gregexpr("[[:alpha:]]+", reviews$text), function(x) sum(x > 0)-2)
+review_text$Length<-sapply(gregexpr("[[:alpha:]]+", review_text$text), function(x) sum(x > 0))
+
+reviews$TextLength<-sapply(reviews$'#', function(x) review_text[review_text$`review #`==x & review_text$'field #'==1,]$Length )
+reviews$CommentText<-sapply(reviews$'#', function(x) review_text[review_text$`review #`==x & review_text$'field #'==1,]$text )
+
+realReviewsFull<-reviews[reviews$`member #` %in% realReviewersFull$`#`,]
+realReviewsShort<-reviews[reviews$`member #` %in% realReviewersShort$`#`,]
+realReviewsAbstract<-reviews[reviews$`member #` %in% realReviewersAbstract$`#`,]
+
+submissions$accepted<-submissions$decision=="accept" 
+
+findConcordance<-function(x){
+    Rreviews<-reviews[reviews$`member #`==x,]
+    Rreviews$accepted<-sapply(Rreviews$'submission #', function(x) submissions[submissions$'#'==x,]$accepted)
+    Rreviews$Concordance<-(Rreviews$"total score">0 & Rreviews$accepted==TRUE) | (Rreviews$"total score"<0 & Rreviews$accepted==FALSE)
+    sum(Rreviews$Concordance)
+    }
+
+realReviewersFull$Concordance<-sapply(realReviewersFull$`#`, findConcordance)
+realReviewersShort$Concordance<-sapply(realReviewersShort$`#`, findConcordance)
+realReviewersAbstract$Concordance<-sapply(realReviewersAbstract$`#`, findConcordance)
+
+calculateNumber<-rbind(realReviewersFull,realReviewersShort,realReviewersAbstract)
+calculateNumber<-aggregate(calculateNumber$Concordance, list(calculateNumber$`person #`),sum)
+realReviewers$Concordance<-calculateNumber$x
+
+realReviewers$RelativeConcordance<-realReviewers$Concordance/realReviewers$nofReviews
+
+findMetaConcordance<-function(x){
+    Mreviews<-metareviews[metareviews$`member name`==x,]
+    Mreviews$accepted<-sapply(Mreviews$'submission #', function(x) submissions[submissions$'#'==x,]$accepted)
+    Mreviews$MetaConcordance<-(Mreviews$"recommendation"=="accept" & Mreviews$accepted==TRUE) | (Mreviews$"recommendation"=="reject" & Mreviews$accepted==FALSE)
+    sum(Mreviews$MetaConcordance)
+    }
+
+realReviewers$MetaConcordance<-sapply(realReviewers$`fullname`, findMetaConcordance)
+
+
+calculateNumber<-rbind(realReviewersFull,realReviewersShort,realReviewersAbstract)
+calculateNumber<-aggregate(calculateNumber$Concordance, list(calculateNumber$`person #`),sum)
+realReviewers$Concordance<-calculateNumber$x
+
+realReviewers$RelativeMetaConcordance<-realReviewers$MetaConcordance/realReviewers$nofMetaReviews
+
+
+findDeviationFull<-function(x){
+    subm<-realReviewsFull[realReviewsFull$"#"==x,]$"submission #"
+    score<-realReviewsFull[realReviewsFull$"#"==x,]$"total score"
+    subReviews<-realReviewsFull[realReviewsFull$"submission #"==subm,]
+    averagescore<-mean(subReviews$"total score")
+    score-averagescore
+}
+
+findDeviationShort<-function(x){
+    subm<-realReviewsShort[realReviewsShort$"#"==x,]$"submission #"
+    score<-realReviewsShort[realReviewsShort$"#"==x,]$"total score"
+    subReviews<-realReviewsShort[realReviewsShort$"submission #"==subm,]
+    averagescore<-mean(subReviews$"total score")
+    score-averagescore
+}
+
+findDeviationAbstract<-function(x){
+    subm<-realReviewsAbstract[realReviewsAbstract$"#"==x,]$"submission #"
+    score<-realReviewsAbstract[realReviewsAbstract$"#"==x,]$"total score"
+    subReviews<-realReviewsAbstract[realReviewsAbstract$"submission #"==subm,]
+    averagescore<-mean(subReviews$"total score")
+    score-averagescore
+}
+
+realReviewsFull$Deviation<-sapply(realReviewsFull$'#', findDeviationFull)
+realReviewsShort$Deviation<-sapply(realReviewsShort$'#', findDeviationShort)
+realReviewsAbstract$Deviation<-sapply(realReviewsAbstract$'#', findDeviationAbstract)
+
+```
+
+
+
+
+
+The Learning Analytics and Knowledge conference continues to be the primary international forum to encounter the latest and best research in the field.  In 2017, Google Scholar ranked the conference at position 8 among Educational Technology journals and conferences [^1] due to its h5-index [^2].  This position is due to the quality of the papers published in LAK and that quality is assured by you, `r params$reviewerFirstName`, and the rest of the Program Committee and reviewers. 
+
+We recognize that the task of reviewing LAK papers is tough.  We are a meeting point of many disciplines: Educational Sciences, Computer Sciences, Data Sciences, Human Computer Interaction, Artificial Intelligence, etc. As reviewers, we are always confronted with papers that present a different point of view and defy our ideas and usual methodologies. Nonetheless, we should be able to provide a fair evaluation of the merits of the paper and its contribution to the state-of-the-art. After reviewing, most reviewers are left with the questions: "Was my recommendation fair?", "Did I provide enough feedback?", "Was it adequate?", "Is there something that I miss from the paper?".  Here is where knowing the opinions of other reviewers and the final decision to accept or reject the paper help us calibrate our point of view.  
+
+The following is a feedback report of your reviews for the Learning Analytics and Knowledge (LAK) 2018. We hope this report will help you reflect on your review style and strictness level when compared against other LAK reviewers, the recommendations made by meta-reviewers and the final decisions taken by the Program Chairs. 
+
+This report is NOT intended to evaluate you as a reviewer and will have NO impact on your selection as reviewer for next conferences. This report has been generated automatically and only the LAK-18 Program Chairs and you will have access to it.
+
+[^1]: https://scholar.google.com/citations?view_op=top_venues&hl=en&vq=eng_educationaltechnology
+
+[^2]: 5-index is the h-index for articles published in the last 5 complete years. It is the largest number h such that h articles published in 2012-2016 have at least h citations each.
+
+# Review Metrics
+This section will present some metrics for your reviews.  This metrics will present a value for you located among a distribution of values for all LAK-18 reviewers. If you were a reviewer in LAK-17, your former values will also be presented.
+
+\pagebreak
+
+## Number of Reviews
+```{r numberreviews}
+numberOfReviews<-realReviewers[realReviewers$`person #`==params$reviewerId,]$nofReviews
+numberFullReviews<-realReviewersFull[realReviewersFull$`person #`==params$reviewerId,]$nofReviews
+numberShortReviews<-realReviewersShort[realReviewersShort$`person #`==params$reviewerId,]$nofReviews
+numberAbstractReviews<-realReviewersAbstract[realReviewersAbstract$`person #`==params$reviewerId,]$nofReviews
+
+if (length(numberFullReviews)==0) numberFullReviews=0
+if (length(numberShortReviews)==0) numberShortReviews=0
+if (length(numberAbstractReviews)==0) numberAbstractReviews=0
+```
+```{r averagereviews}
+
+numberReviews<-realReviewers$nofReviews
+numberFull<-realReviewersFull$nofReviews
+numberShort<-realReviewersShort$nofReviews
+numberAbstract<-realReviewersAbstract$nofReviews
+```
+**Description**:  This is the number of papers with at least one complete review for each reviewer.
+
+**Your value**: **`r pander(numberOfReviews)`** (`r pander(numberFullReviews)` Full, `r pander(numberShortReviews)` Short and `r pander(numberAbstractReviews)` Abstracts) fully reviewed
+
+`r if(count(old_metrics)>0) {if(! is.na(old_metrics$nofReviews)) {"**Your LAK-17 value: "}}`
+`r if(count(old_metrics)>0) {if(! is.na(old_metrics$nofReviews)) {pander(old_metrics$nofReviews)}}`
+`r if(count(old_metrics)>0) {if(! is.na(old_metrics$nofReviews)) {"** fully reviewed"}}`
+
+**LAK-18 mean value**: **`r pander(mean(numberReviews))`** (`r pander(mean(numberFull))` Full, `r pander(mean(numberShort))` Short and `r pander(mean(numberAbstract))` Abstracts) fully reviewed
+
+**LAK-18 median value**: **`r pander(median(numberReviews))`** (`r pander(median(numberFull))` Full, `r pander(median(numberShort))` Short and `r pander(median(numberAbstract))` Abstracts) fully reviewed
+
+
+**Recommendation:** 
+`r if (numberOfReviews>4) { "THANK YOU for your extra effort!  Your collaboration helped LAK-18 to provide quality feedback from at least 3 reviewers to each paper." } else {    "Thank you!  You completed your assignment, helping LAK-18 to provide quality feedback from at least 3 reviewers to each paper.  This year LAK had a large pool of reviewer that was translated in a lower load per reviewer.  LAK and the Learning Analytics community count with your collaboration in future editions of the conference."}`
+
+
+\vspace{12pt}
+
+```{r plotNumberReviews, echo=FALSE, comment=FALSE, results='hide', fig.cap="Histogram of Completed Reviews per Reviewer. Red line is your value."}
+histdata<-hist(x=numberReviews,breaks=8,main="",xlab="Papers",ylab="Reviewers")
+abline(v=numberOfReviews,col = "red")
+```
+
+\pagebreak
+
+## Review Submission Time
+```{r timesrevies}
+datesrevFull<-datesReviewsFull[datesReviewsFull$`member #`==reviewerFullnumber,]
+datesrevShort<-datesReviewsShort[datesReviewsShort$`member #`==reviewerShortnumber,]
+datesrevAbstract<-datesReviewsAbstract[datesReviewsAbstract$`member #`==reviewerAbstractnumber,]
+datesrev<-rbind(datesrevFull,datesrevShort,datesrevAbstract)
+
+datesReviews<-rbind(datesReviewsFull,datesReviewsShort,datesReviewsAbstract)
+```
+
+**Description**:  Difference (in days) of the time when the review was submitted and the deadline.  
+
+**Your mean value**: **`r pander(abs(mean(datesrev$Minutes)))`** days `r if(mean(datesrev$Minutes)>0) {"after"} else {"before"}` the deadline
+
+`r if(count(old_metrics)>0)  {if(! is.na(old_metrics$Minutes))  { "**Your LAK-17 value: "}}`
+`r if(count(old_metrics)>0)  {if(! is.na(old_metrics$Minutes))  {pander(abs(old_metrics$Minutes))}}`
+`r if(count(old_metrics)>0)  {if(! is.na(old_metrics$Minutes))  {if(old_metrics$Minutes>0) {"** days after"} else {"** days before"}}}`
+`r if(count(old_metrics)>0)  {if(! is.na(old_metrics$Minutes))  {" the deadline"}}`
+
+**LAK-18 mean value**: **`r pander(abs(mean(datesReviews$Minutes)))`** days `r if(mean(datesReviews$Minutes)>0) {"after"} else {"before"}`  the deadline
+
+**LAK-18 median value**: **`r pander(abs(median(datesReviews$Minutes)))`** days `r if(median(datesReviews$Minutes)>0) {"after"} else {"before"}` the deadline
+
+**Recommendation:**
+`r if (mean(datesrev$Minutes)<(-5)) { "All or most of your reviews were received well in advance the deadline!.  Thank you for your effort and planning.  Please keep submitting on time in next editions of the conference." } else if (mean(datesrev$Minutes)<0) {    "All or most of your reviews were received before the deadline. Thank you!  Only with timely submitted reviews, we will be able to have enough meta-review discussions to improve the quality of the accepted papers."} else {    "NOTE: If you were assigned papers after the deadline, first, a big thank you and second, disregard this recommendation.  \n One or more of your submissions were submitted after the deadline.  While we understand that sometimes unplanned events interfere with the review process, we recommend you to start reviewing earlier to accomodate unexpected work. "}`
+
+\vspace{12pt}
+
+```{r values, echo=FALSE, comment=FALSE, results='hide',fig.cap="Cumulative distribution of Reviews versus time of review submission before / after deadline.  Red lines are your submissions.  Negative values represent submissions before the deadline, positive values represent submissions after the deadline."}
+plot(ecdf(datesReviews$Minutes),main="",ylab="Fraction of Reviews",xlab="Days before / after Deadline")
+abline(v=0)
+sapply(datesrev$Minutes,function(d) abline(v=d, col="red"))
+```
+
+\pagebreak
+
+## Review Length
+```{r lengthrevies}
+lengthrevFull<-realReviewsFull[realReviewsFull$`member #`==reviewerFullnumber,]
+lengthrevShort<-realReviewsShort[realReviewsShort$`member #`==reviewerShortnumber,]
+lengthrevAbstract<-realReviewsAbstract[realReviewsAbstract$`member #`==reviewerAbstractnumber,]
+lengthrev=rbind(lengthrevFull,lengthrevShort,lengthrevAbstract)
+
+realReviews<-rbind(realReviewsFull,realReviewsShort,realReviewsAbstract)
+```
+
+**Description:** This is average number of words in the comments for the authors in your reviews. This can be seen as how lengthy your reviews were.
+
+**Average length of your reviews:** **`r pander(mean(lengthrev$TextLength))`** words per review
+
+`r if(count(old_metrics)>0) {if(! is.na(old_metrics$TextLength)) { "**Your LAK-17 value: "}}`
+`r if(count(old_metrics)>0) {if(! is.na(old_metrics$TextLength)) {pander(old_metrics$TextLength)}}`
+`r if(count(old_metrics)>0) {if(! is.na(old_metrics$TextLength)) {"** words per review"}}`
+
+**LAK-18 mean value**: **`r pander(mean(realReviews$TextLength))`** words per review
+
+**LAK-18 median value**: **`r pander(median(realReviews$TextLength))`** words per review
+
+**Recommendation:**
+`r if (mean(lengthrev$TextLength)>400) { "Based on their length, your reviews, in average, seem to provide detailed information to the authors. Thanks for your effort!  Please continue like this in following editions of the conference." } else if (mean(lengthrev$TextLength)>250) {    "Based on their length, your reviews provide, in average, at least the minimum required level of detail (250 words).  Remember that this feedback is the way in which we, as a community, could communicate and agree on our desired level of scientific rigor and contribution.  Please keep or increase the detail of reviews for new editions of the conference."} else if (mean(lengthrev$TextLength)>100) {    "Based on their length, your reviews, in average, are below the expected level of detail (250 words).  Remember that this feedback is the way in which we, as a community, could communicate and agree on our desired level of scientific rigor and contribution.  Also it enable old and new researchers to improve their work. For next editions of the conference, please provide more detailed feedback to the authors."} else {"Your reviews, in average, are too short to provide enough feedback to the authors. We expect the reviews to be at least 250 words long.  Remember that this feedback is the way in which we, as a community, could communicate and agree on our desired level of scientific rigor and contribution.  Also it enable old and new researchers to improve their work. For next editions of the conference, please provide more detailed feedback to the authors."}`
+
+\vspace{12pt}
+
+```{r plotLengthReviews, echo=FALSE, fig.cap="Distribution of numbers of words per review. Red lines are your values.", comment=FALSE, results='hide'}
+plot(density(realReviews$TextLength),main="",ylab="Fraction of Reviews",xlab="Number of Words")
+sapply(lengthrev$TextLength,function(d) abline(v=d, col="red"))
+```
+
+\pagebreak
+
+##Absolute and Relative Concordance
+
+```{r concordancerevies}
+myconcordance<-realReviewers[realReviewers$`person #`==params$reviewerId,]
+
+```
+**Description Absolute Concordance:** One point was assigned to you for each review where you recommend accept (strong, normal and weak) and the paper was accepted. Also, one point was assigned to you for each review that you recommended reject (strong, normal, weak) and the paper was rejected. This can be seen as how your opinion correlates with the final decisions made by the PC.  The LAK-18 values were calculated by reviewer (not by review)
+
+**Description Relative Concordance:** The Absolute Concordance divided by the number of reviews you made.  The LAK values were calculated by reviewer (not by review).
+
+
+**Your Absolute Concordance:** **`r pander(myconcordance$Concordance)`** reviews agreed with the final decisions
+
+**Your Relative Concordance:** **`r pander(myconcordance$Concordance/numberOfReviews*100)`%** of your reviews agreed with the final decision 
+
+`r if(count(old_metrics)>0) {if(! is.na(old_metrics$Concordance)) { "**Your LAK-17 Absolute Concordance: "}}`
+`r if(count(old_metrics)>0) {if(! is.na(old_metrics$Concordance)) {pander(old_metrics$Concordance)}}`
+`r if(count(old_metrics)>0) {if(! is.na(old_metrics$Concordance)) {"** reviews agreed with the final decisions"}}`
+
+`r if(count(old_metrics)>0) {if(! is.na(old_metrics$RelativeConcordance)) { "**Your LAK-17 Relative Concordance: "}}`
+`r if(count(old_metrics)>0) {if(! is.na(old_metrics$RelativeConcordance)) {pander(old_metrics$RelativeConcordance*100)}}`
+`r if(count(old_metrics)>0) {if(! is.na(old_metrics$RelativeConcordance)) {"%** reviews agreed with the final decisions"}}`
+
+**LAK-18 mean Absolute Concordance**: **`r pander(mean(realReviewers$Concordance))`** reviews agreed with the final decisions
+
+**LAK-18 median Absolute Concordance**: **`r pander(median(realReviewers$Concordance))`** reviews agreed with the final decisions
+
+**LAK-18 mean Relative Concordance**: **`r pander(mean(realReviewers$RelativeConcordance*100,na.rm=TRUE))`%** of reviews agreed with the final decisions 
+
+**LAK-18 median Relative Concordance**: **`r pander(median(realReviewers$RelativeConcordance*100,na.rm=TRUE))`%** of reviews agreed with the final decisions 
+
+**Recommendation:**
+The value of the absolute and relative concordance metrics do not measure the quality of your review.  It is only an indicator of the level of agreement between your opinion and that of the PC chairs.  In the Learning Analytics community we value the different points of views and we encourage you to keep providing your honest best assessment of the quality of each paper that pass through your review.  Moreover, we encourage you to get involved in the organization of LAK.  You could be our next PC chair and the final decisions will be yours.
+
+\vspace{12pt}
+
+```{r plotconcordanceReviews, echo=FALSE, fig.cap="Histogram of Relative Concordance per Reviewer. The red line is your value.", comment=FALSE, results='hide'}
+hist(na.omit(realReviewers$RelativeConcordance*100),main="",ylab="Number of Reviewers",xlab="Percentage of Relative Concordance")
+abline(v=myconcordance$Concordance/numberOfReviews*100, col="red")
+```
+
+\pagebreak
+
+## Deviation
+
+```{r deviationrevies}
+deviationrevFull<-realReviewsFull[realReviewsFull$`member #`==reviewerFullnumber,]
+deviationrevShort<-realReviewsShort[realReviewsShort$`member #`==reviewerShortnumber,]
+deviationrevAbstract<-realReviewsAbstract[realReviewsAbstract$`member #`==reviewerAbstractnumber,]
+
+deviationrev<-rbind(deviationrevFull,deviationrevShort,deviationrevAbstract)
+```
+
+**Description:** How different, in average, were your reviews from the average score that the paper finally got. Large positive/negative numbers represent you rated the quality of the paper higher/lower than the other reviewers of the same paper. 
+
+**Your Deviation**: **`r if(mean(deviationrev$Deviation)>0) {"+"} else {"-"}` `r pander(abs(mean(deviationrev$Deviation)))`** average points of deviation from final score for papers you reviewed
+
+`r if(count(old_metrics)>0) {if(! is.na(old_metrics$Deviation)) { "**Your LAK-17 Deviation: "}}`
+`r if(count(old_metrics)>0) {if(! is.na(old_metrics$Deviation)) {if(old_metrics$Deviation>0) {paste("+ ",pander(abs(old_metrics$Deviation)))} else {paste("-",pander(abs(old_metrics$Deviation)))}}}`
+`r if(count(old_metrics)>0) {if(! is.na(old_metrics$Deviation)) {"** average points of deviation from final score for papers you reviewed"}}`
+
+**LAK-18 mean value**: **`r if(mean(realReviews$Deviation)>0) {"+"} else {"-"}` `r pander(abs(mean(realReviews$Deviation)))`** points of deviation from final score of paper
+
+**LAK-18 standard deviation of value**: **`r if(sd(realReviews$Deviation)>0) {"+"} else {"-"}` `r pander(abs(sd(realReviews$Deviation)))`** points of deviation from final score of paper
+
+**LAK-18 median value**: **`r if(median(realReviews$Deviation)>0) {"+"} else {"-"}``r pander(abs(median(realReviews$Deviation)))`** points of deviation from final score of paper
+
+**Recommendation:**
+The deviation metric by itself does not provide significant information.  However, in addition with the opinions given by your co-reviewers (next section) could help you reflect on your level of strictness. We invite you to read the reviews provided by others to check if you did not miss any important aspect of the paper or any not-so-evident flaw.  This is especially important if your deviation value is higher than +/- 2 because it indicates a strong divergence in criteria with other reviewers. 
+As it was the case for the concordance metric, the Learning Analytics community does not strive to have a Deviation of 0, but to have a diverse and complementary body of reviewers that could highlights the strong and weak points of research papers from a variety of viewpoints.
+
+\vspace{12pt}
+
+```{r plotDeviationReviews, echo=FALSE, fig.cap="Distribution of deviation from average score. Red lines are the values for your reviews.", comment=FALSE, results='hide'}
+plot(density(realReviews$Deviation),main="",ylab="Percentage of Reviews",xlab="Deviation points")
+sapply(deviationrev$Deviation,function(d) abline(v=d, col="red"))
+```
+
+
+
+\pagebreak
+
+`r if(metareviewer) { "## Number of Metareviews"}`
+```{r numbermetareviews}
+
+numberMetaReviewsReviewer<-realReviewers[realReviewers$`person #`==params$reviewerId,]$nofMetaReviews
+numberMetaReviews<-realReviewers[realReviewers$nofMetaReviews>0,]$nofMetaReviews
+```
+
+`r if(metareviewer) { "**Your value**: **"}`
+`r if(metareviewer) {pander(numberMetaReviewsReviewer)}`
+`r if(metareviewer) {"** fully metareviewed"}`
+
+`r if(metareviewer) {"**LAK-18 mean value**: **"}`
+`r if(metareviewer) {pander(mean(numberMetaReviews))}`
+`r if(metareviewer) {"**  fully metareviewed"}`
+
+`r if(metareviewer) {"**LAK-18 median value**: **"}`
+`r if(metareviewer) {pander(median(numberMetaReviews))}`
+`r if(metareviewer) {"** fully metareviewed"}`
+
+
+`r if(metareviewer) {"**Recommendation:**"}`
+`r if(metareviewer) {"THANK YOU for serving as a Metareviewer at LAK-18. Your contribution was key to select the best papers among the submissions.  Due to its positive result, we plan to keep the metareview process in the coming editions of the conference. We hope to have your help next year."}`
+
+
+\vspace{12pt}
+
+```{r plotNumberMetaReviews, echo=FALSE, comment=FALSE, results='hide', fig.cap="Histogram of Completed Metareviews per Metareviewer. Red line is your value."}
+if (metareviewer)
+    {
+    histdata<-hist(x=numberMetaReviews,breaks=8,main="",xlab="Metareviews",ylab="Metareviewers")
+    abline(v=numberMetaReviewsReviewer,col = "red")
+    }
+```
+
+\pagebreak
+
+\pagebreak
+
+`r if(metareviewer) { "## Concordance of Metareviews"}`
+```{r metaconcordance}
+mymetaconcordance<-realReviewers[realReviewers$`person #`==params$reviewerId,]
+numberMetaReviews<-realReviewers[realReviewers$nofMetaReviews>0,]$nofMetaReviews
+
+metaReviewersConcordance<-realReviewers[realReviewers$nofMetaReviews>0,]$MetaConcordance
+metaReviewersRelativeConcordance<-realReviewers[realReviewers$nofMetaReviews>0,]$RelativeMetaConcordance
+```
+
+`r if(metareviewer) { "**Description**:  One point was assigned to you for each metareview where you recommend accept and the paper was accepted. Also, one point was assinged to you for each review that you recommended reject and the paper was rejected. This can be seen as how your opinion correlates with the final decisions made by the PC.  The LAK-18 values were calculated by metareviewer (not by review)"}`
+
+`r if(metareviewer) { "**Description Relative Concordance:** The Absolute Concordance divided by the number of metareviews you made.  The LAK values were calculated by metareviewer (not by metareview)."}`
+
+`r if(metareviewer) { "**Your Absolute Concordance:** **"}`
+`r if(metareviewer) {pander(mymetaconcordance$MetaConcordance)}`
+`r if(metareviewer) { "** metareviews agreed with the final decisions"}`
+
+`r if(metareviewer) { "**Your Relative Concordance:** **"}`
+`r if(metareviewer) {pander(mymetaconcordance$RelativeMetaConcordance*100)}`
+`r if(metareviewer) { "%** of your metareviews agreed with the final decision"}`
+
+`r if(metareviewer) { "**LAK-18 mean Absolute Concordance**: **"}`
+`r if(metareviewer) {pander(mean(metaReviewersConcordance,na.rm=TRUE))}`
+`r if(metareviewer) { "** metareviews agreed with the final decisions"}`
+
+`r if(metareviewer) { "**LAK-18 median Absolute Concordance**: **"}`
+`r if(metareviewer) {pander(median(metaReviewersConcordance,na.rm=TRUE))}`
+`r if(metareviewer) { "** metareviews agreed with the final decisions"}`
+
+`r if(metareviewer) { "**LAK-18 mean Relative Concordance**: **"}`
+`r if(metareviewer) {pander(mean(metaReviewersRelativeConcordance*100,na.rm=TRUE))}`
+`r if(metareviewer) { "%** of metareviews agreed with the final decisions"}`
+
+`r if(metareviewer) { "**LAK-18 median Relative Concordance**: **"}`
+`r if(metareviewer) {pander(median(metaReviewersRelativeConcordance*100,na.rm=TRUE))}`
+`r if(metareviewer) { "%** of metareviews agreed with the final decisions"}`
+
+`r if(metareviewer) {"**Recommendation:**"}`
+`r if(metareviewer) {"This metric is for your information only.  We truly appreciate your frank metareview and if a paper that you recommended was not accepted (or viceversa), remember that there are factors such as space or conference theme that affect the final decision."}`
+
+
+\vspace{12pt}
+
+```{r plotconcordanceMetaReviews, echo=FALSE, fig.cap="Histogram of Relative Concordance per Metareviewer. The red line is your value.", comment=FALSE, results='hide'}
+if (metareviewer)
+{
+    hist(na.omit(realReviewers$RelativeMetaConcordance*100),main="",ylab="Number of Metareviewers",xlab="Percentage of Relative Concordance")
+    abline(v=myconcordance$RelativeMetaConcordance*100, col="red")
+}
+
+```
+
+\pagebreak
+
+## Number of Comments
+```{r numbercomments}
+numberOfComments<-realReviewers[realReviewers$`person #`==params$reviewerId,]$nofComments
+
+if (length(numberOfComments)==0) numberFullReviews=0
+
+```
+```{r averagecomments}
+
+numberComments<-realReviewers$nofComments
+
+```
+**Description**:  This is the number of comments made by the reviewer during the metareview phase.
+
+**Your value**: **`r pander(numberOfComments)`** comments
+
+**LAK-18 mean value**: **`r pander(mean(numberComments))`** comments
+
+**LAK-18 median value**: **`r pander(median(numberComments))`** comments
+
+
+**Recommendation:** 
+`r if (numberOfComments>1) { "Thanks for being involved in the metareview phase.  Discussion among reviewers is important in a multidisciplinary field such as Learning Analytics.  A better decision was reached based on the comments and the final metareview." } else {    "We encourage you to participate more in the metareview process.  Only through the discussion between reviewers and metareviewers we are able to reach a better final decision."}`
+
+
+\vspace{12pt}
+
+```{r plotNumberComments, echo=FALSE, comment=FALSE, results='hide', fig.cap="Histogram of Comments per Reviewer. Red line is your value."}
+histdata<-hist(x=numberComments,breaks=8,main="",xlab="Comments",ylab="Reviewers")
+abline(v=numberOfComments,col = "red")
+```
+\pagebreak
+
+##Review Texts from You and Other Reviewers
+
+**NOTE:** You can still see the original papers at https://easychair.org/conferences/?conf=lak18
+
+```{r otherReviews, echo=FALSE, eval=TRUE, include=FALSE}
+RreviewsFull<-reviews[reviews$`member #`==reviewerFullnumber,]
+RreviewsShort<-reviews[reviews$`member #`==reviewerShortnumber,]
+RreviewsAbstract<-reviews[reviews$`member #`==reviewerAbstractnumber,]
+
+Rreviews<-rbind(RreviewsFull,RreviewsShort,RreviewsAbstract)
+out <- NULL
+for (currentReview in Rreviews$'#'){
+    currentReview<-currentReview
+    env=new.env()
+    out <- c(out, knit_child('other_reviews.Rmd', envir=env))
+}
+```
+`r paste(out, collapse='\n')`
